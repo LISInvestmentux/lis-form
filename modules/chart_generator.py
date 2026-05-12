@@ -1,25 +1,47 @@
 """
-真圓環圖表生成模組（雲端版）
-- 字型用 Noto Sans CJK TC（Streamlit Cloud 透過 packages.txt 安裝）
-- 字型 fallback 鏈：Noto → 微軟正黑 → PingFang → DejaVu
+真圓環圖表生成模組（雲端版 v2）
+解決雲端 Linux 中文方框問題：強制用絕對路徑載入 Noto CJK 字型。
 """
 import io
 import math
+import os
+from pathlib import Path
 from typing import Optional
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.font_manager import FontProperties, fontManager
 
-# 字型 fallback：雲端用 Noto，本機 Windows 用微軟正黑體
-plt.rcParams["font.family"] = [
-    "Noto Sans CJK TC",
-    "Noto Sans TC",
-    "Microsoft JhengHei",
-    "PingFang TC",
-    "DejaVu Sans",
+
+# ─── 強制找 CJK 字型（依平台優先順序） ───
+_FONT_CANDIDATES = [
+    # Linux（Streamlit Cloud 經 packages.txt 安裝 fonts-noto-cjk）
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    # Windows
+    "C:/Windows/Fonts/msjh.ttc",      # 微軟正黑體
+    "C:/Windows/Fonts/msyh.ttc",      # 微軟雅黑
+    # macOS
+    "/System/Library/Fonts/PingFang.ttc",
 ]
+
+中文字型 = None
+for _p in _FONT_CANDIDATES:
+    if Path(_p).exists():
+        try:
+            fontManager.addfont(_p)
+            中文字型 = FontProperties(fname=_p)
+            break
+        except Exception:
+            continue
+
+if 中文字型 is None:
+    # 找不到就用 DejaVu Sans（會顯示方框，但至少不會崩潰）
+    中文字型 = FontProperties(family="DejaVu Sans")
+
 plt.rcParams["axes.unicode_minus"] = False
 
 
@@ -80,14 +102,14 @@ def 生成Enjoy圓環(score: float, status: str = "HOLD",
         0.04, facecolor=色, edgecolor="white", linewidth=1.5, zorder=10))
 
     ax.text(0,  0.30, 副標, ha="center", va="center",
-            fontsize=14, color=COLORS["text_dim"])
+            fontsize=14, color=COLORS["text_dim"], fontproperties=中文字型)
     ax.text(0, -0.02, f"{score}", ha="center", va="center",
             fontsize=72, color=色, fontweight="bold")
     ax.text(0, -0.30, "/ 100", ha="center", va="center",
             fontsize=14, color=COLORS["text_dim"])
     乾淨status = status.lstrip("🔴🟢🟡⚪ ").strip()
     ax.text(0, -0.50, 乾淨status, ha="center", va="center",
-            fontsize=20, color=色, fontweight="bold")
+            fontsize=20, color=色, fontweight="bold", fontproperties=中文字型)
     return _圖to_bytes(fig)
 
 
@@ -108,11 +130,11 @@ def 生成資金規劃圓環(火力比例: int, 子彈金額: float, 建議: str
     ax.add_patch(patches.Wedge((0, 0), 1.0, end_angle, 90, width=0.18,
                                 facecolor=色, edgecolor="none"))
     ax.text(0,  0.35, "今日子彈", ha="center", va="center",
-            fontsize=14, color=COLORS["text_dim"])
+            fontsize=14, color=COLORS["text_dim"], fontproperties=中文字型)
     ax.text(0,  0.05, f"NT$ {子彈金額:,.0f}", ha="center", va="center",
             fontsize=30, color=色, fontweight="bold")
     ax.text(0, -0.25, f"火力 {火力比例}%", ha="center", va="center",
-            fontsize=16, color=COLORS["text_dim"])
+            fontsize=16, color=COLORS["text_dim"], fontproperties=中文字型)
     ax.text(0, -0.50, 建議, ha="center", va="center",
             fontsize=18, color=色, fontweight="bold")
     return _圖to_bytes(fig)
