@@ -18,12 +18,78 @@ from modules import chart_generator
 
 
 # ─── 頁面設定 ───
+LIS_LOGO_URL = "https://files.catbox.moe/g9quk5.png"
+LIFF_ID = "2010070081-6wmnysUD"
+
 st.set_page_config(
     page_title="L.I.S 持股配置",
-    page_icon="💰",
+    page_icon=LIS_LOGO_URL,
     layout="centered",
     initial_sidebar_state="collapsed",
 )
+
+# ─── LIFF SDK：自動拿 LINE 身分（Phase 2.7c-2）───
+import streamlit.components.v1 as components
+
+components.html(f"""
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="background:#000;color:#FBBF24;font-family:sans-serif;margin:0;padding:8px;">
+<div id="liff-status" style="font-size:13px;">🔄 偵測 LINE 身分中...</div>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+async function initLiff() {{
+    const statusEl = document.getElementById('liff-status');
+    try {{
+        await liff.init({{ liffId: '{LIFF_ID}' }});
+        if (!liff.isInClient()) {{
+            statusEl.innerHTML = '🌐 瀏覽器開啟（非 LINE）— 多人版功能未啟用';
+            statusEl.style.color = '#888';
+            return;
+        }}
+        const profile = await liff.getProfile();
+        statusEl.innerHTML =
+            '<img src="' + profile.pictureUrl + '" style="height:24px;border-radius:50%;vertical-align:middle;"> ' +
+            '<b style="color:#FBBF24;">' + profile.displayName + '</b> ' +
+            '<span style="color:#888;">已透過 LINE 自動登入</span>';
+        // 把 userId 存到 sessionStorage（之後可由 Streamlit 用 query_params 讀）
+        sessionStorage.setItem('lis_uid', profile.userId);
+        sessionStorage.setItem('lis_name', profile.displayName);
+        // 如果 URL 還沒帶 uid 參數，就重新導向加上 uid 讓 Streamlit 可讀
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has('uid')) {{
+            url.searchParams.set('uid', profile.userId);
+            url.searchParams.set('name', encodeURIComponent(profile.displayName));
+            window.parent.location.href = url.toString();
+        }}
+    }} catch (e) {{
+        statusEl.innerHTML = '🌐 LIFF SDK 載入中... (此頁可手動操作)';
+        statusEl.style.color = '#888';
+    }}
+}}
+initLiff();
+</script>
+</body></html>
+""", height=42)
+
+# 從 query params 讀使用者身分
+_uid = st.query_params.get("uid", "")
+_name = st.query_params.get("name", "")
+if _name:
+    import urllib.parse
+    _name = urllib.parse.unquote(_name)
+
+# ─── 加入主畫面（PWA / Apple Touch Icon）所需 meta ───
+st.markdown(f"""
+<link rel="apple-touch-icon" sizes="180x180" href="{LIS_LOGO_URL}">
+<link rel="apple-touch-icon" sizes="167x167" href="{LIS_LOGO_URL}">
+<link rel="apple-touch-icon" sizes="152x152" href="{LIS_LOGO_URL}">
+<link rel="apple-touch-icon" href="{LIS_LOGO_URL}">
+<link rel="icon" type="image/png" sizes="512x512" href="{LIS_LOGO_URL}">
+<link rel="shortcut icon" href="{LIS_LOGO_URL}">
+<meta name="apple-mobile-web-app-title" content="LIS">
+<meta name="application-name" content="LIS">
+""", unsafe_allow_html=True)
 
 # ─── 方舟黑黃 CSS（手機優先）───
 st.markdown("""
@@ -124,8 +190,12 @@ col_title, col_meta = st.columns([3, 1])
 with col_title:
     st.markdown('<h2 style="color:#FFF; margin:0;">L.I.S 持股配置</h2>',
                 unsafe_allow_html=True)
-    st.markdown('<p class="dim">Life Is Shit. I should enjoy it.</p>',
-                unsafe_allow_html=True)
+    if _name:
+        st.markdown(f'<p class="dim">歡迎 {_name}（LINE 身分已自動帶入）</p>',
+                    unsafe_allow_html=True)
+    else:
+        st.markdown('<p class="dim">Life Is Shit. I should enjoy it.</p>',
+                    unsafe_allow_html=True)
 with col_meta:
     st.markdown(
         f'<p style="text-align:right; margin-top:8px;" class="dim">{datetime.now():%Y/%m/%d}</p>',
@@ -229,42 +299,4 @@ d = p["deployment_by_enjoy_index"]
 if 模擬enjoy >= d["be_happy_min_score"]:
     建議, 火力 = "BE HAPPY", d["be_happy_deploy_pct"]
 elif 模擬enjoy >= d["wait_min_score"]:
-    建議, 火力 = "WAIT", d["wait_deploy_pct"]
-else:
-    建議, 火力 = "HOLD", d["hold_deploy_pct"]
-
-股票配置上限 = p["total_capital_twd"] * 0.8
-最小現金保留 = p["total_capital_twd"] * p["risk_rules"]["min_cash_reserve_pct"] / 100
-火力上限 = 股票配置上限 * 火力 / 100
-現金上限 = max(0, p["current_cash_twd"] - 最小現金保留)
-今日子彈 = round(min(火力上限, 現金上限), 0)
-
-st.markdown('<div class="gauge-box">', unsafe_allow_html=True)
-png2 = chart_generator.生成資金規劃圓環(火力, 今日子彈, 建議)
-st.image(png2, use_container_width=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    st.metric("可動用子彈", f"NT$ {今日子彈:,.0f}")
-with col_b:
-    st.metric("火力比例", f"{火力}%")
-with col_c:
-    st.metric("單檔上限", f"NT$ {p['total_capital_twd']*0.2:,.0f}")
-
-
-# ─── 下載 JSON ───
-st.markdown('<div class="divider-yellow"></div>', unsafe_allow_html=True)
-json_bytes = json.dumps(p, ensure_ascii=False, indent=2).encode("utf-8")
-st.download_button(
-    label="📥 下載我的配置 JSON",
-    data=json_bytes,
-    file_name=f"portfolio_{p.get('user_name', 'user') or 'user'}_{datetime.now():%Y%m%d}.json",
-    mime="application/json",
-    use_container_width=True,
-)
-st.markdown(
-    '<p class="dim" style="text-align:center;">下載後可放進你本機 LIS 系統的 API 資料夾，'
-    '或 email 給 Ryan 加入自動推播。</p>',
-    unsafe_allow_html=True
-)
+    建議, 火力 = "WAIT", 
