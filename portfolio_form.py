@@ -35,36 +35,43 @@ components.html(f"""
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="background:#000;color:#FBBF24;font-family:sans-serif;margin:0;padding:8px;">
-<div id="liff-status" style="font-size:13px;">🔄 偵測 LINE 身分中...</div>
+<div id="liff-status" style="font-size:13px;color:#888;">🔄 載入中...</div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
+function setStatus(html, color) {{
+    const el = document.getElementById('liff-status');
+    el.innerHTML = html;
+    if (color) el.style.color = color;
+}}
+
+// 5 秒 timeout：避免 Streamlit iframe 內 LIFF SDK 永遠 hang
+const TIMEOUT_MS = 5000;
+function withTimeout(p, ms) {{
+    return Promise.race([
+        p,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+    ]);
+}}
+
 async function initLiff() {{
-    const statusEl = document.getElementById('liff-status');
     try {{
-        await liff.init({{ liffId: '{LIFF_ID}' }});
+        await withTimeout(liff.init({{ liffId: '{LIFF_ID}' }}), TIMEOUT_MS);
         if (!liff.isInClient()) {{
-            statusEl.innerHTML = '🌐 瀏覽器開啟（非 LINE）— 多人版功能未啟用';
-            statusEl.style.color = '#888';
+            setStatus('🌐 瀏覽器開啟（非 LINE）— 可手動填寫', '#888');
             return;
         }}
-        const profile = await liff.getProfile();
-        statusEl.innerHTML =
+        const profile = await withTimeout(liff.getProfile(), TIMEOUT_MS);
+        setStatus(
             '<img src="' + profile.pictureUrl + '" style="height:24px;border-radius:50%;vertical-align:middle;"> ' +
             '<b style="color:#FBBF24;">' + profile.displayName + '</b> ' +
-            '<span style="color:#888;">已透過 LINE 自動登入</span>';
-        // 把 userId 存到 sessionStorage（之後可由 Streamlit 用 query_params 讀）
+            '<span style="color:#888;"> 已透過 LINE 自動登入</span>',
+            '#FFFFFF'
+        );
         sessionStorage.setItem('lis_uid', profile.userId);
         sessionStorage.setItem('lis_name', profile.displayName);
-        // 如果 URL 還沒帶 uid 參數，就重新導向加上 uid 讓 Streamlit 可讀
-        const url = new URL(window.location.href);
-        if (!url.searchParams.has('uid')) {{
-            url.searchParams.set('uid', profile.userId);
-            url.searchParams.set('name', encodeURIComponent(profile.displayName));
-            window.parent.location.href = url.toString();
-        }}
     }} catch (e) {{
-        statusEl.innerHTML = '🌐 LIFF SDK 載入中... (此頁可手動操作)';
-        statusEl.style.color = '#888';
+        // SDK 在 Streamlit 巢狀 iframe 內常掛起，5 秒後顯示靜態訊息
+        setStatus('💡 LIFF 環境受限（Streamlit iframe）— 表單仍可手動使用', '#888');
     }}
 }}
 initLiff();
