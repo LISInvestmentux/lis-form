@@ -299,4 +299,42 @@ d = p["deployment_by_enjoy_index"]
 if 模擬enjoy >= d["be_happy_min_score"]:
     建議, 火力 = "BE HAPPY", d["be_happy_deploy_pct"]
 elif 模擬enjoy >= d["wait_min_score"]:
-    建議, 火力 = "WAIT", 
+    建議, 火力 = "WAIT", d["wait_deploy_pct"]
+else:
+    建議, 火力 = "HOLD", d["hold_deploy_pct"]
+
+股票配置上限 = p["total_capital_twd"] * 0.8
+最小現金保留 = p["total_capital_twd"] * p["risk_rules"]["min_cash_reserve_pct"] / 100
+火力上限 = 股票配置上限 * 火力 / 100
+現金上限 = max(0, p["current_cash_twd"] - 最小現金保留)
+今日子彈 = round(min(火力上限, 現金上限), 0)
+
+st.markdown('<div class="gauge-box">', unsafe_allow_html=True)
+png2 = chart_generator.生成資金規劃圓環(火力, 今日子彈, 建議)
+st.image(png2, use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    st.metric("可動用子彈", f"NT$ {今日子彈:,.0f}")
+with col_b:
+    st.metric("火力比例", f"{火力}%")
+with col_c:
+    st.metric("單檔上限", f"NT$ {p['total_capital_twd']*0.2:,.0f}")
+
+
+# ─── 下載 JSON ───
+st.markdown('<div class="divider-yellow"></div>', unsafe_allow_html=True)
+json_bytes = json.dumps(p, ensure_ascii=False, indent=2).encode("utf-8")
+st.download_button(
+    label="📥 下載我的配置 JSON",
+    data=json_bytes,
+    file_name=f"portfolio_{p.get('user_name', 'user') or 'user'}_{datetime.now():%Y%m%d}.json",
+    mime="application/json",
+    use_container_width=True,
+)
+st.markdown(
+    '<p class="dim" style="text-align:center;">下載後可放進你本機 LIS 系統的 API 資料夾，'
+    '或 email 給 Ryan 加入自動推播。</p>',
+    unsafe_allow_html=True
+)
